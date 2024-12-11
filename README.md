@@ -1,8 +1,5 @@
 # CV Analyzer and Job Recommender
 
-
-Resume Insights is an advanced resume parsing and analysis tool that leverages the power of LlamaIndex, Gemini, and Streamlit to extract key information from PDF resumes and present it in an intuitive, interactive format.
-
 This tool analyzes a CV and extracts key information which is then used to suggest suitable jobs from a job ad database. 
 
 ## Features

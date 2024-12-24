@@ -17,7 +17,6 @@ import json
 from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, Settings, Document, StorageContext, load_index_from_storage
 from llama_index.core.node_parser import MarkdownElementNodeParser
 from llama_index.llms.openai import OpenAI
-from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
 
 

@@ -21,8 +21,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
 
 
-openai.api_key = st.secrets["OPENAI_API_KEY"]#os.getenv("OPENAI_API_KEY")
-LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]#os.environ["LLAMA_CLOUD_API_KEY_2"]
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]
 
 class Education(BaseModel):
     institution: Optional[str] = Field(None, description="The name of the educational institution")

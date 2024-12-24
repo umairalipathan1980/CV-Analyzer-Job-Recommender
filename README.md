@@ -30,7 +30,7 @@ This tool analyzes a CV and extracts key information which is then used to sugge
 
 4. Run the Streamlit app:
    ```
-   python -m streamlit run app.py
+   python -m streamlit run .\job_recommender.py
    ```
 
 

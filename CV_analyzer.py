@@ -9,8 +9,6 @@ import os
 from typing import List, Optional
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field, root_validator, field_validator
-from dotenv import load_dotenv
-load_dotenv()
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 import openai

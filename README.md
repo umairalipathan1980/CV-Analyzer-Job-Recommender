@@ -6,7 +6,7 @@ This tool analyzes a CV and extracts key information which is then used to sugge
 
 - **CV Parsing**: Parsing CV using LlamaParse.
 - **Information Extraction**: Extracting information from CV using Pydantic models and gpt-4o
-- **Skills weighting**: Assigning weightage to skills and displaying in a UI
+- **Skills scoring**: Assigning scores to skills and displaying in a UI
 - **Job Recommendations**: Recommding jobs based on the profile.
 
 ## How to Use the Code.

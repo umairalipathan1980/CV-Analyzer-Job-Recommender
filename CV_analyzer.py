@@ -112,12 +112,15 @@ class CvAnalyzer:
                 """
         try:
             response = self.query_engine.query(prompt)
-
+            
             if not response or not response.response:
                 raise ValueError("Query engine returned an empty response.")
 
+            # Clean the response to remove extraneous formatting
+            cleaned_response = response.response.strip().strip("```json").strip("```")
+
             # Validate JSON response against the Candidate model
-            return Candidate.model_validate_json(response.response)
+            return Candidate.model_validate_json(cleaned_response)
         except Exception as e:
             print(f"Error parsing response: {str(e)}")  # Log the error for debugging
             raise ValueError("Failed to extract insights. Please ensure the resume and query engine are properly configured.")
@@ -202,11 +205,16 @@ class CvAnalyzer:
             The created query engine.
         """
 
-        parsing_instructions = "This document is a resume. Extract each section separately. The sections may include personal and contact information, education, skills, experience, publications, etc. "
+        parsing_instructions = (
+            "This document is a resume. Extract each section separately, including personal and contact information, "
+            "education, skills, experience, publications, etc. Ensure that each section is output as a separate document object."
+        )
+
         # Parser
         parser = LlamaParse(
             #result_type="text",  
             result_type = "markdown",
+            premium_mode=True,
             parsing_instructions = parsing_instructions,
             auto_mode=True,
             auto_mode_trigger_on_image_in_page=True,
@@ -299,5 +307,4 @@ class CvAnalyzer:
  
 if __name__ == "__main__":
     pass
-
 

@@ -21,7 +21,7 @@ import streamlit as st
 
 
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]
+LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY"]
 
 class Education(BaseModel):
     institution: Optional[str] = Field(None, description="The name of the educational institution")

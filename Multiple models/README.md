@@ -1,34 +1,28 @@
-# CV Analyzer and Job Recommender
-
-This tool analyzes a CV and extracts key information which is then used to suggest suitable jobs from a job ad database. 
-
-## Features
-
-- **CV Parsing**: Parsing CV using LlamaParse.
-- **Information Extraction**: Extracting information from CV using Pydantic models and gpt-4o
-- **Skills weighting**: Assigning weightage to skills and displaying in a UI
-- **Job Recommendations**: Recommding jobs based on the profile.
-
-## How to Use the Code.
-
-1. Clone the repository:
+## 1. Install dependencies:
    ```
-   git clone https://github.com/umairalipathan1980/CV-Analyzer-Job-Recommender.git
-   cd CV-Analyzer-Job-Recommender
+   pip install llama-index openai pydantic[email] streamlit llama-index-llms-ollama llama-index-embeddings-huggingface transformers
    ```
-
-2. Install dependencies:
+   Install torch for CPU-version (if you do not have a GPU):
    ```
-   pip install -r requirements.txt
+   pip install torch torchvision torchaudio
    ```
-
-3. Set up environment variables in .env file:
+   Install torch for GPU-version (if you have a CUDA-enabled GPU for faster processing). Here, we assume that CUDA toolkit is already installed and configured on your machine. 
+   ```
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu<CUDA_VERSION>
+   ```
+   Here <CUDA_VERSION> refers to the CUDA version on your PC. For example, on my machine, the CUDA version is 12.6, so I will run the following code:  
+   ```
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+   ```
+   Install Ollama from their official website (https://ollama.com/) 
+   
+## 2. Set up environment variables in .env file:
    ```
    OPENAI_API_KEY=your_OPENAI_api_key
    LLAMA_CLOUD_API_KEY=your_llama_cloud_api_key
    ```
 
-4. Run the Streamlit app:
+## 3. Run the Streamlit app:
    ```
    python -m streamlit run .\job_recommender.py
    ```

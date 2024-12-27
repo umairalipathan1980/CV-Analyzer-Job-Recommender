@@ -34,6 +34,7 @@ Clone the repository:
    ```
 
 For using **only OpenAI models**, nagivate to the folder **OpenAI models**. Follow the instructions in readme file.  
+
 For using **additional models** such as llama3.1:latest, navigate to the folder **Multiple models**. From there, you can select a large language model and an embedding model. In this case, you will need to install additional libraries. Please refer to the readme file in that folder.
 
 

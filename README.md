@@ -7,7 +7,7 @@ The instructions to use the codes in both the folders are present in their respe
 
 ## Features
 - Option to select open-source or OpenAI's large language models and embedding models (the folder Multiple models) 
-- **CV Parsing**: Parsing CV using LlamaParse.
+- **CV Parsing**: Parsing CV using LlamaParse and Pydantic. 
 - **Information Extraction**: Extracting information from CV using Pydantic models and gpt-4o
 - **Skills scoring**: Assigning scores to skills and displaying in a UI
 - **Job Recommendations**: Recommding jobs based on the profile.

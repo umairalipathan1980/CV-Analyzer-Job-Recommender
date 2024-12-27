@@ -11,7 +11,7 @@ This tool analyzes a CV and extracts key information which is then used to sugge
 
 ## Overall Process
 The following figure shows the overall process. 
-
+![My Figure](images/image.png "Overall process of parsing a resume, scoring skills, and matching education, experience and skills with a vector database to suggest matching jobs.")
 
 ## How to Use the Code.
 

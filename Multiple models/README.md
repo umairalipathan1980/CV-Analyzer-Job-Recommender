@@ -16,15 +16,16 @@
    ```
    Install Ollama from their official website (https://ollama.com/) 
    
-## 2. Set up environment variables in .env file:
+## 2. Set up API keys:
+   Create a folder ".streamlit" in the root directory and create a "secrets.toml" file in it. Set your API keys there as follows:
    ```
-   OPENAI_API_KEY=your_OPENAI_api_key
-   LLAMA_CLOUD_API_KEY=your_llama_cloud_api_key
+   OPENAI_API_KEY = "your_OPENAI_api_key"
+   LLAMA_CLOUD_API_KEY = "your_llama_cloud_api_key"
    ```
-
 ## 3. Run the Streamlit app:
    ```
    python -m streamlit run .\job_recommender.py
    ```
+The job dataset is in the folder "job_index_storage". To create a new vector database for modified job dataset, just delete the folder "job_index_storage". A new vector database will be created.
 
 

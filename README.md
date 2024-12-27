@@ -21,26 +21,14 @@ The following figure shows the overall process.
 
 ## How to Use the Code.
 
-1. Clone the repository:
+Clone the repository:
    ```
    git clone https://github.com/umairalipathan1980/CV-Analyzer-Job-Recommender.git
    cd CV-Analyzer-Job-Recommender
    ```
 
-2. Install dependencies:
-   ```
-   pip install -r requirements.txt
-   ```
+For using only OpenAI models, nagivate to the folder "OpenAI models". Follow the instructions in readme file.  
+For using additional models such as llama3.1:latest, navigate to the folder "Multiple models". From there, you can select a large language model and an embedding model. In this case, you will need to install additional libraries. Please refer to the readme file in that folder.
 
-3. Create a folder ".streamlit" in the root directory and create a "secrets.toml" file in it. Set your API keys there as follows:
-   ```
-   OPENAI_API_KEY = "your_OPENAI_api_key"
-   LLAMA_CLOUD_API_KEY = "your_llama_cloud_api_key"
-   ```
-
-4. Run the Streamlit app:
-   ```
-   python -m streamlit run .\job_recommender.py
-   ```
 
 

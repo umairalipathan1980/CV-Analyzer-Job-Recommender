@@ -1,6 +1,6 @@
 **1. Install dependencies:**
    ```
-   pip install llama-index openai pydantic[email] streamlit
+   pip install llama-index openai pydantic[email] streamlit llama_parse
    ```
 
 **2. Create a folder ".streamlit" in the root directory and create a "secrets.toml" file in it. Set your API keys there as follows:**

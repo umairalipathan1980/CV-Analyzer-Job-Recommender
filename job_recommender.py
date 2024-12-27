@@ -16,8 +16,6 @@ from llama_index.core.retrievers import BaseRetriever
 from llama_index.llms.openai import OpenAI
 from llama_index.core.prompts import PromptTemplate
 from pydantic import BaseModel, Field, ConfigDict
-import warnings
-warnings.filterwarnings("ignore")
 
 
 

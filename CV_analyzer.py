@@ -3,12 +3,21 @@ from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
 )
+
+import torch
+from transformers import AutoTokenizer, AutoModel
+from llama_index.core import Settings, VectorStoreIndex  
+from llama_index.llms.ollama import Ollama
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+import shutil
 from llama_parse import LlamaParse
 from llama_index.core.node_parser import SentenceSplitter
 import os
 from typing import List, Optional
 from typing import List, Optional
 from pydantic import BaseModel, EmailStr, Field, root_validator, field_validator
+from dotenv import load_dotenv
+load_dotenv()
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 import openai
@@ -17,11 +26,19 @@ import json
 from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, Settings, Document, StorageContext, load_index_from_storage
 from llama_index.core.node_parser import MarkdownElementNodeParser
 from llama_index.llms.openai import OpenAI
+from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
+import warnings
+warnings.filterwarnings("ignore")
+
 
 
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY"]
+LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]
+
+from transformers import AutoTokenizer, AutoModel
+import torch
+
 
 class Education(BaseModel):
     institution: Optional[str] = Field(None, description="The name of the educational institution")
@@ -82,12 +99,13 @@ class Candidate(BaseModel):
         return values
 
 class CvAnalyzer:
-    def __init__(self, file_path):
+    def __init__(self, file_path, llm_option, embedding_option):
+        self.file_path = file_path
+        self.llm_option = llm_option
+        self.embedding_option = embedding_option
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self._configure_settings()
         self.query_engine = self._create_query_engine(file_path)
-        self.embedding_model = Settings.embed_model
-        self.llm = Settings.llm 
-        openai.api_key = os.getenv("OPENAI_API_KEY")
 
     def extract_candidate_data(self) -> Candidate:
         """
@@ -96,6 +114,7 @@ class CvAnalyzer:
         Returns:
             Candidate: The extracted candidate data.
         """
+        print(f"Extracting CV data. LLM: {self.llm_option}")
         # Output Schema
         output_schema = Candidate.model_json_schema()
 
@@ -112,36 +131,36 @@ class CvAnalyzer:
                 """
         try:
             response = self.query_engine.query(prompt)
-            
+
             if not response or not response.response:
                 raise ValueError("Query engine returned an empty response.")
 
-            # Clean the response to remove extraneous formatting
-            cleaned_response = response.response.strip().strip("```json").strip("```")
-
             # Validate JSON response against the Candidate model
-            return Candidate.model_validate_json(cleaned_response)
+            return Candidate.model_validate_json(response.response)
         except Exception as e:
             print(f"Error parsing response: {str(e)}")  # Log the error for debugging
             raise ValueError("Failed to extract insights. Please ensure the resume and query engine are properly configured.")
 
-    def _get_embedding(self, texts: list[str], model) -> np.ndarray:
-        """
-        Compute embeddings for a list of texts using OpenAI.
+    def _get_embedding(self, texts: List[str], model: str) -> torch.Tensor:
+        if model.startswith("text-embedding-"):
+            from openai import OpenAI
+            client = OpenAI(api_key=openai.api_key)
+            response = client.embeddings.create(input=texts, model=model)
+            embeddings = [torch.tensor(item.embedding) for item in response.data]
+        elif model == "BAAI/bge-small-en-v1.5":
+            tokenizer = AutoTokenizer.from_pretrained(model)
+            hf_model = AutoModel.from_pretrained(model).to(self.device)
 
-        Parameters:
-        - texts (list of str): The texts to compute embeddings for.
-        - model (str): The model to use for embeddings. Defaults to "text-embedding-ada-002".
+            embeddings = []
+            for text in texts:
+                inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512).to(self.device)
+                with torch.no_grad():
+                    outputs = hf_model(**inputs)
+                embeddings.append(outputs.last_hidden_state.mean(dim=1).squeeze().cpu())
+        else:
+            raise ValueError(f"Unsupported embedding model: {model}")
 
-        Returns:
-        - np.ndarray: A NumPy array containing embedding vectors for all provided texts.
-        """
-        from openai import OpenAI
-
-        client = OpenAI(api_key = openai.api_key)
-        response = client.embeddings.create(input=texts, model=model)
-        embeddings = [item.embedding for item in response.data]
-        return np.array(embeddings)
+        return torch.stack(embeddings)
 
     def compute_skill_scores(self, skills: list[str]) -> dict:
         """
@@ -181,7 +200,7 @@ class CvAnalyzer:
         documents = self.query_engine.retrieve("Extract full resume content")
         return " ".join([doc.text for doc in documents])
 
-    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+    def _cosine_similarity(self, vec1: torch.Tensor, vec2: torch.Tensor) -> float:
         """
         Compute cosine similarity between two vectors.
 
@@ -192,11 +211,12 @@ class CvAnalyzer:
         Returns:
         - float: Cosine similarity score.
         """
-        return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+        vec1, vec2 = vec1.to(self.device), vec2.to(self.device)
+        return (torch.dot(vec1, vec2) / (torch.norm(vec1) * torch.norm(vec2))).item()
 
     def _create_query_engine(self, file_path: str):
         """
-        Creates a query engine from a file path.
+        Creates a query engine from a file path, handling different LLM configurations.
 
         Args:
             file_path (str): The path to the file.
@@ -204,18 +224,15 @@ class CvAnalyzer:
         Returns:
             The created query engine.
         """
-
         parsing_instructions = (
-            "This document is a resume. Extract each section separately, including personal and contact information, "
-            "education, skills, experience, publications, etc. Ensure that each section is output as a separate document object."
+            "This document is a resume. Extract each section separately. The sections may include "
+            "personal and contact information, education, skills, experience, publications, etc."
         )
 
         # Parser
         parser = LlamaParse(
-            #result_type="text",  
-            result_type = "markdown",
-            premium_mode=True,
-            parsing_instructions = parsing_instructions,
+            result_type="markdown",
+            parsing_instructions=parsing_instructions,
             auto_mode=True,
             auto_mode_trigger_on_image_in_page=True,
             auto_mode_trigger_on_table_in_page=True,
@@ -229,57 +246,91 @@ class CvAnalyzer:
             input_files=[file_path], file_extractor=file_extractor
         ).load_data()
 
-        #print(documents)
-        
-        # Vector index
-        index = VectorStoreIndex.from_documents(documents)
-        # Query Engine
-        return index.as_query_engine()
+        # Vector index creation
+        index = VectorStoreIndex.from_documents(documents, embed_model=self.embedding_model)
+        query_engine = index.as_query_engine()
+        print("Query engine initialized successfully.")
+        return query_engine
+
+
 
     def _configure_settings(self):
         """
-        Set the LLM and the embedding model
+        Configure the LLM and embedding model based on user selections.
         """
-        llm = OpenAI(model="gpt-4o", temperature = 0.0)
-        embed_model = OpenAIEmbedding(model="text-embedding-3-large")
-        # Global Settings
+        # Determine the device based on CUDA availability
+        if torch.cuda.is_available():
+            device = "cuda"
+            print("CUDA is available. Using GPU.")
+        else:
+            device = "cpu"
+            print("CUDA is not available. Using CPU.")
+
+        # Configure the LLM
+        if self.llm_option == "gpt-4o":
+            llm = OpenAI(model="gpt-4o", temperature=0.0)
+        elif self.llm_option == "gpt-4o-mini":
+            llm = Ollama(model="gpt-4o-mini", temperature = 0)
+        elif self.llm_option == "llama3:70b-instruct-q4_0":
+            llm = Ollama(model="llama3:70b-instruct-q4_0", temperature = 0, request_timeout=180.0, device=device)
+        elif self.llm_option == "mistral:latest":
+            llm = Ollama(model="mistral:latest", temperature = 0, request_timeout=180.0, device=device)
+        elif self.llm_option == "llama3.3:latest":
+            llm = Ollama(model="llama3.3:latest", temperature = 0, request_timeout=180.0, device=device)
+        else:
+            raise ValueError(f"Unsupported LLM option: {self.llm_option}")
+
+        # Configure the embedding model
+        if self.embedding_option.startswith("text-embedding-"):
+            embed_model = OpenAIEmbedding(model=self.embedding_option)
+        elif self.embedding_option == "BAAI/bge-small-en-v1.5":
+            embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        else:
+            raise ValueError(f"Unsupported embedding model: {self.embedding_option}")
+
+        # Set the models in Settings
         Settings.embed_model = embed_model
-        Settings.llm = llm 
+        Settings.llm = llm
+        self.llm = llm
+        self.embedding_model = embed_model
 
 
-    def create_or_load_job_index(self, json_file: str, index_folder: str = "job_index_storage"):
+
+    def create_or_load_job_index(self, json_file: str, index_folder: str = "job_index_storage", recreate: bool = False):
         """
         Create or load a vector database for jobs using LlamaIndex.
 
         Args:
         - json_file: Path to job dataset JSON file.
         - index_folder: Folder to save/load the vector index.
+        - recreate: Boolean flag indicating whether to recreate the index.
 
         Returns:
         - VectorStoreIndex: The job vector index.
         """
-        if os.path.exists(index_folder):
+        if recreate and os.path.exists(index_folder):
+            # Delete the existing job index storage
+            print(f"Deleting the existing job dataset: {index_folder}...")
+            shutil.rmtree(index_folder)
+        if not os.path.exists(index_folder):
+            print(f"Creating new job vector index with {self.embedding_model.model_name} model...")
+            with open(json_file, "r") as f:
+                job_data = json.load(f)
+            # Convert job descriptions to Document objects by serializing all fields dynamically
+            documents = []
+            for job in job_data["jobs"]:
+                job_text = "\n".join([f"{key.capitalize()}: {value}" for key, value in job.items()])
+                documents.append(Document(text=job_text))
+            # Create the vector index directly from documents
+            index = VectorStoreIndex.from_documents(documents, embed_model=self.embedding_model)
+            # Save index to disk
+            index.storage_context.persist(persist_dir=index_folder)
+            return index
+        else:
             print(f"Loading existing job index from {index_folder}...")
             storage_context = StorageContext.from_defaults(persist_dir=index_folder)
             return load_index_from_storage(storage_context)
 
-        print("Creating new job vector index...")
-        with open(json_file, "r") as f:
-            job_data = json.load(f)
-
-        # Convert job descriptions to Document objects by serializing all fields dynamically
-        documents = []
-        for job in job_data["jobs"]:
-            job_text = "\n".join([f"{key.capitalize()}: {value}" for key, value in job.items()])
-            documents.append(Document(text=job_text))
-
-        # Create the vector index directly from documents
-        index = VectorStoreIndex.from_documents(documents, embed_model=self.embedding_model)
-
-        # Save index to disk
-        index.storage_context.persist(persist_dir=index_folder)
-
-        return index
 
     def query_jobs(self, education, skills, experience, index, top_k=3):
         """
@@ -295,16 +346,17 @@ class CvAnalyzer:
         Returns:
         - List of job matches.
         """
+        print(f"Fetching job suggestions.(LLM: {self.llm.model}, embed_model: {self.embedding_option})")
         query = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}"
         
-        # Configure the retriever with the desired number of top results
+        # Use retriever with appropriate model
         retriever = index.as_retriever(similarity_top_k=top_k)
-        
-        # Retrieve the top matching jobs
         matches = retriever.retrieve(query)
 
         return matches
+
  
 if __name__ == "__main__":
     pass
+
 

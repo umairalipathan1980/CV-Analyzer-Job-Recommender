@@ -3,9 +3,6 @@ from transformers import AutoTokenizer, AutoModel
 from llama_index.core import Settings, VectorStoreIndex 
 from llama_index.llms.ollama import Ollama
 from typing import Union
-
-
-
 import streamlit as st
 import tempfile
 import random
@@ -17,11 +14,9 @@ from llama_index.llms.openai import OpenAI
 from llama_index.core.prompts import PromptTemplate
 from pydantic import BaseModel, Field, ConfigDict
 
-
-
 class RAGStringQueryEngine(BaseModel):
     """
-    Custom Query Engine for Retrieval-Augmented Generation.
+    Custom Query Engine for Retrieval-Augmented Generation (fetching matching job recommendations).
     """
     retriever: BaseRetriever
     llm: Union[OpenAI, Ollama]
@@ -46,11 +41,9 @@ class RAGStringQueryEngine(BaseModel):
         
         return str(response)
 
-
 def main():
     st.set_page_config(page_title="CV Analyzer & Job Recommender", page_icon="🔍")
     st.title("CV Analyzer & Job Recommender")
-
     # Sidebar for model selection
     with st.sidebar:
         st.header("Model Selection")
@@ -74,8 +67,6 @@ def main():
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
                         temp_file.write(uploaded_file.getvalue())
                         temp_file_path = temp_file.name
-
-                    
                     # Initialize CvAnalyzer with selected models
                     analyzer = CvAnalyzer(temp_file_path, llm_option, embedding_option)
                     print("Resume extractor initialized.")
@@ -92,13 +83,11 @@ def main():
                     # Send retrieved nodes to LLM for final output
                     retrieved_context = "\n\n".join([match.node.get_content() for match in matching_jobs])
                     candidate_details = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}"
-
                     # Check for selected LLM and use the appropriate class
                     if llm_option == "llama3:70b-instruct-q4_0":
                         llm = Ollama(model="llama3:70b-instruct-q4_0", temperature=0.0)
                     else:
                         llm = OpenAI(model=llm_option, temperature=0.0)
-
                     rag_engine = RAGStringQueryEngine(
                         retriever=job_index.as_retriever(),
                         llm=analyzer.llm,  # This can be OpenAI or Ollama
@@ -125,7 +114,6 @@ def main():
                         candidate_details=candidate_details,
                         retrieved_jobs=retrieved_context
                     )
-
                     # Display extracted information
                     st.subheader("Extracted Information")
                     st.write(f"**Name:** {insights.name}")
@@ -141,9 +129,6 @@ def main():
                 except Exception as e:
                     st.error(f"Failed to analyze the resume: {str(e)}")
 
-
-
-
 def display_skills(skills: list[str], analyzer):
     """
     Display skills with their computed scores as large golden stars with partial coverage.
@@ -151,9 +136,7 @@ def display_skills(skills: list[str], analyzer):
     if not skills:
         st.warning("No skills found to display.")
         return
-
     st.subheader("Skills")
-
     # Custom CSS for large golden stars
     st.markdown(
         """
@@ -178,15 +161,12 @@ def display_skills(skills: list[str], analyzer):
 
     # Compute scores for all skills
     skill_scores = analyzer.compute_skill_scores(skills)
-
     # Display each skill with a star rating
     for skill in skills:
         score = skill_scores.get(skill, 0)  # Get the raw score
         max_score = max(skill_scores.values()) if skill_scores else 1  # Avoid division by zero
-
         # Normalize the score to a 5-star scale
         normalized_score = (score / max_score) * 5 if max_score > 0 else 0
-
         # Split into full stars and partial star percentage
         full_stars = int(normalized_score)
         if (normalized_score - full_stars) >= 0.40:
@@ -210,7 +190,6 @@ def display_skills(skills: list[str], analyzer):
         # Display skill name and star rating
         st.markdown(f"**{skill}**: {stars_html}", unsafe_allow_html=True)
 
-
 def display_education(education_list):
     """
     Display a list of educational qualifications.
@@ -222,12 +201,9 @@ def display_education(education_list):
             degree = education.degree if education.degree else "Not found"
             year = education.graduation_date if education.graduation_date else "Not found"
             details = education.details if education.details else []
-
             formatted_details = ". ".join(details) if details else "No additional details provided."
-
             st.markdown(f"**{degree}**, {institution} ({year})")
             st.markdown(f"_Details_: {formatted_details}")
-
 
 def display_experience(experience_list):
     """
@@ -242,14 +218,11 @@ def display_experience(experience_list):
             start_date = experience.start_date if experience.start_date else "Not found"
             end_date = experience.end_date if experience.end_date else "Not found"
             responsibilities = experience.responsibilities if experience.responsibilities else ["Not found"]
-
             brief_responsibilities = ", ".join(responsibilities)
-
             st.markdown(
                 f"- Worked as **{job_title}** from {start_date} to {end_date} in *{company_name}*, {location}, "
                 f"where responsibilities include {brief_responsibilities}."
             )
-
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

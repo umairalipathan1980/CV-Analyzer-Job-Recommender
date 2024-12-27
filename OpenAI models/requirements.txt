@@ -1,0 +1,7 @@
+llama-index
+openai
+numpy
+pydantic[email]
+streamlit
+transformers
+torch

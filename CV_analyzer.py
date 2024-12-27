@@ -28,8 +28,6 @@ from llama_index.core.node_parser import MarkdownElementNodeParser
 from llama_index.llms.openai import OpenAI
 from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
-import warnings
-warnings.filterwarnings("ignore")
 
 
 

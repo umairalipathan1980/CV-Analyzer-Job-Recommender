@@ -70,7 +70,7 @@ class Experience(BaseModel):
         elif not isinstance(v, list):
             return []
         return v
-# Main class ensapsulating education and epxerience classes with other information
+# Main Pydantic class ensapsulating education and epxerience classes with other information
 class Candidate(BaseModel):
     name: Optional[str] = Field(None, description="The full name of the candidate")
     email: Optional[EmailStr] = Field(None, description="The email of the candidate")

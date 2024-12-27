@@ -3,6 +3,7 @@
 This tool analyzes a CV and extracts key information, scores the extracted skills, and suggests suitable jobs from a job ad database.  
 
 There are two folders: i) **OpenAI models**: this code uses OpenAI's gpt-4o large language model, and text-embedding-3-large embedding model, and ii) **Mutiple models**: this code offers to select multiple models including open-source and OpenAI's large language models and embedding models.  
+
 If you have a powerful computing machine with a GPU, you can try the code in **Multiple models** for comapring the performance of multiple models. If you prefer to use only OpenAI models, you need to run the code in **OpenAI models**. In that case you will need OpenAI's API keys. 
 
 The instructions to use the codes in both the folders are present in their respective folders. 

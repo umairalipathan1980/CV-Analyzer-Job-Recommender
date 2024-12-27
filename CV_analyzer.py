@@ -28,16 +28,14 @@ from llama_index.core.node_parser import MarkdownElementNodeParser
 from llama_index.llms.openai import OpenAI
 from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
-
-
-
-openai.api_key = st.secrets["OPENAI_API_KEY"]
-LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]
-
 from transformers import AutoTokenizer, AutoModel
 import torch
 
+#Set your API keys in a secret.toml file
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]
 
+# Pydantic model for extracting education
 class Education(BaseModel):
     institution: Optional[str] = Field(None, description="The name of the educational institution")
     degree: Optional[str] = Field(None, description="The degree or qualification earned")
@@ -54,6 +52,7 @@ class Education(BaseModel):
             return []
         return v
 
+# Pydantic model for extracting experience
 class Experience(BaseModel):
     company: Optional[str] = Field(None, description="The name of the company or organization")
     location: Optional[str] = Field(None, description="The location of the company or organization")
@@ -71,7 +70,7 @@ class Experience(BaseModel):
         elif not isinstance(v, list):
             return []
         return v
-
+# Main class ensapsulating education and epxerience classes with other information
 class Candidate(BaseModel):
     name: Optional[str] = Field(None, description="The full name of the candidate")
     email: Optional[EmailStr] = Field(None, description="The email of the candidate")
@@ -96,6 +95,7 @@ class Candidate(BaseModel):
                 values[key] = None
         return values
 
+# Class for analyzing the CV contents
 class CvAnalyzer:
     def __init__(self, file_path, llm_option, embedding_option):
         self.file_path = file_path
@@ -105,6 +105,7 @@ class CvAnalyzer:
         self._configure_settings()
         self.query_engine = self._create_query_engine(file_path)
 
+    # Function for extracting the data as per the pydantic models
     def extract_candidate_data(self) -> Candidate:
         """
         Extracts candidate data from the resume.
@@ -139,6 +140,7 @@ class CvAnalyzer:
             print(f"Error parsing response: {str(e)}")  # Log the error for debugging
             raise ValueError("Failed to extract insights. Please ensure the resume and query engine are properly configured.")
 
+    # Function for computing embeddings based on the selected embedding model. These could be CV embeddings, skill embeddings, or job embeddings
     def _get_embedding(self, texts: List[str], model: str) -> torch.Tensor:
         if model.startswith("text-embedding-"):
             from openai import OpenAI
@@ -160,6 +162,7 @@ class CvAnalyzer:
 
         return torch.stack(embeddings)
 
+    #Compute skill scores based on their semantic similarity (Cosine similarity) with the CV contents
     def compute_skill_scores(self, skills: list[str]) -> dict:
         """
         Compute semantic weightage scores for each skill based on the resume content
@@ -188,6 +191,7 @@ class CvAnalyzer:
             raw_scores[skill] = similarity
         return raw_scores
 
+    # Extract all the contents from a CV
     def _extract_resume_content(self) -> str:
         """
         Extracts and returns the full text of the resume from the query engine.
@@ -198,6 +202,7 @@ class CvAnalyzer:
         documents = self.query_engine.retrieve("Extract full resume content")
         return " ".join([doc.text for doc in documents])
 
+    #Function to compute the Cosine similarity of skills with the CV contents
     def _cosine_similarity(self, vec1: torch.Tensor, vec2: torch.Tensor) -> float:
         """
         Compute cosine similarity between two vectors.
@@ -212,6 +217,7 @@ class CvAnalyzer:
         vec1, vec2 = vec1.to(self.device), vec2.to(self.device)
         return (torch.dot(vec1, vec2) / (torch.norm(vec1) * torch.norm(vec2))).item()
 
+    # Function to create a query engine for parsing and job retrieval
     def _create_query_engine(self, file_path: str):
         """
         Creates a query engine from a file path, handling different LLM configurations.
@@ -249,9 +255,8 @@ class CvAnalyzer:
         query_engine = index.as_query_engine()
         print("Query engine initialized successfully.")
         return query_engine
-
-
-
+    
+    # Function to configure model settings
     def _configure_settings(self):
         """
         Configure the LLM and embedding model based on user selections.
@@ -291,9 +296,8 @@ class CvAnalyzer:
         Settings.llm = llm
         self.llm = llm
         self.embedding_model = embed_model
-
-
-
+    
+    #Function to create an existing job vector dataset or create a new job vector dataset
     def create_or_load_job_index(self, json_file: str, index_folder: str = "job_index_storage", recreate: bool = False):
         """
         Create or load a vector database for jobs using LlamaIndex.
@@ -329,7 +333,7 @@ class CvAnalyzer:
             storage_context = StorageContext.from_defaults(persist_dir=index_folder)
             return load_index_from_storage(storage_context)
 
-
+    #Function to query job dataset to fetch the top k matching jobs according to the given education, skills, and experience. 
     def query_jobs(self, education, skills, experience, index, top_k=3):
         """
         Query the vector database for jobs matching the resume.
@@ -346,14 +350,11 @@ class CvAnalyzer:
         """
         print(f"Fetching job suggestions.(LLM: {self.llm.model}, embed_model: {self.embedding_option})")
         query = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}"
-        
         # Use retriever with appropriate model
         retriever = index.as_retriever(similarity_top_k=top_k)
         matches = retriever.retrieve(query)
-
         return matches
 
- 
 if __name__ == "__main__":
     pass
 

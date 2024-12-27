@@ -9,6 +9,10 @@ This tool analyzes a CV and extracts key information which is then used to sugge
 - **Skills scoring**: Assigning scores to skills and displaying in a UI
 - **Job Recommendations**: Recommding jobs based on the profile.
 
+## Overall Process
+The following figure shows the overall process. 
+
+
 ## How to Use the Code.
 
 1. Clone the repository:

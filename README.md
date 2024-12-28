@@ -34,17 +34,39 @@ Following is the screenshot of the streamlit app:
   <em>A snapshot of the streamlit application</em>
 </p>
 
-## How to Use the Code.
+# How to Use the Code.
 
 Clone the repository:
    ```
    git clone https://github.com/umairalipathan1980/CV-Analyzer-Job-Recommender.git
    cd CV-Analyzer-Job-Recommender
    ```
+## For OpenAI Models  
 
-For using **only OpenAI models**, nagivate to the folder **OpenAI models**. Follow the instructions in readme file.  
+For using **only OpenAI models**, nagivate to the folder **OpenAI models**. This code uses `gpt-4o` large langugae model and 'text-embedding-3-large' embedding model. 
 
-For using **additional models** such as llama3.1:latest, navigate to the folder **Multiple models**. From there, you can select a large language model and an embedding model. In this case, you will need to install additional libraries. Please refer to the readme file in that folder.
+**1. Install dependencies:**
+   ```
+   pip install llama-index openai pydantic[email] streamlit llama_parse
+   ```
+
+**2. Create a folder ".streamlit" in the root directory and create a "secrets.toml" file in it. Set your API keys there as follows:**
+   ```
+   OPENAI_API_KEY = "your_OPENAI_api_key"
+   LLAMA_CLOUD_API_KEY = "your_llama_cloud_api_key"
+   ```
+
+**3. Run the Streamlit app:**
+   ```
+   python -m streamlit run .\job_recommender.py  
+   ```
+The job dataset is in the folder 'job_index_storage'. To create a new vector database for modified job dataset, just delete the folder 'job_index_storage'. A new vector database will be created. 
+
+## For Selecting OpenAI or Open-Source Models
+
+For selecting OpenAI or open-source models (such as llama), navigate to the folder **Multiple models**. From there, you can select a large language model and an embedding model. In this case, you will need to install additional libraries. 
+
+
 
 
 

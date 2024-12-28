@@ -32,7 +32,7 @@ import torch
 
 #Set your API keys in a secret.toml file
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]
+LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY"]
 
 # Pydantic model for extracting education
 class Education(BaseModel):
@@ -108,7 +108,6 @@ class CvAnalyzer:
         """
         Extracts candidate data from the resume.
         """
-        llm = OpenAI(model=self.llm_option, temperature=0.0)
         print(f"Extracting CV data. LLM: {self.llm_option}")
         output_schema = Candidate.model_json_schema()
         parser = LlamaParse(
@@ -140,7 +139,7 @@ class CvAnalyzer:
             ----------------
             """
         try:
-            response = llm.complete(prompt)
+            response = self.llm.complete(prompt)
             if not response or not response.text:
                 raise ValueError("Failed to get a response from LLM.")
 
@@ -327,5 +326,4 @@ class CvAnalyzer:
 
 if __name__ == "__main__":
     pass
-
 

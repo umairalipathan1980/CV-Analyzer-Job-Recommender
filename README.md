@@ -21,7 +21,7 @@ The instructions to use the codes in both the folders are present in their respe
 The following figure shows the overall process. 
 
 <p align="center">
-  <img src="images/image.png" alt="My Figure" width="500">
+  <img src="images/image.png" alt="My Figure" width="700">
   <br>
   <em>Overall process of parsing a resume, scoring skills, and matching education, experience and skills with a vector database to suggest matching jobs.</em>
 </p>

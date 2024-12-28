@@ -15,7 +15,7 @@ The instructions to use the codes in both the folders are present in their respe
 - **CV Parsing**: Parsing CV using LlamaParse. 
 - **Information Extraction**: Extracting information from CV using Pydantic models and gpt-4o
 - **Skills scoring**: Assigning scores to skills and displaying in a UI
-- **Job Recommendations**: Recommding jobs based on the profile.
+- **Job Recommendations**: Recommding jobs based on the profile from a job dataset
 
 ## Overall Process
 The following figure shows the overall process. 

@@ -26,6 +26,7 @@ The following figure shows the overall process.
   <em>Overall process of parsing a resume, scoring skills, and matching education, experience and skills with a vector database to suggest matching jobs.</em>
 </p>
 Following is the screenshot of the streamlit app:
+
 <p align="center">
   <img src="images/appScrshot.png" alt="My Figure" width="700">
   <br>

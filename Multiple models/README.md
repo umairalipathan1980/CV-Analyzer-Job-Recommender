@@ -15,6 +15,10 @@
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
    ```
    **Install Ollama from their official website (https://ollama.com/)** 
+   **Pull an open-source model from Ollama before using it in the application. For instance, use the following code to pull `llama3.3:latest`.
+   ```
+   ollama pull llama3.3:latest
+   ```
    
 ## 2. Set up API keys:
    Create a folder ".streamlit" in the root directory and create a "secrets.toml" file in it. Set your API keys there as follows:

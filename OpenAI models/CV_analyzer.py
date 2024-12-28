@@ -3,6 +3,13 @@ from llama_index.core import (
     VectorStoreIndex,
     SimpleDirectoryReader,
 )
+
+import torch
+from transformers import AutoTokenizer, AutoModel
+from llama_index.core import Settings, VectorStoreIndex  
+from llama_index.llms.ollama import Ollama
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+import shutil
 from llama_parse import LlamaParse
 from llama_index.core.node_parser import SentenceSplitter
 import os
@@ -16,13 +23,16 @@ import numpy as np
 import json
 from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, Settings, Document, StorageContext, load_index_from_storage
 from llama_index.core.node_parser import MarkdownElementNodeParser
-from llama_index.llms.openai import OpenAI
+from sklearn.feature_extraction.text import TfidfVectorizer
 import streamlit as st
+from transformers import AutoTokenizer, AutoModel
+import torch
 
-
+#Set your API keys in a secret.toml file
 openai.api_key = st.secrets["OPENAI_API_KEY"]
-LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY_2"]
+LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY"]
 
+# Pydantic model for extracting education
 class Education(BaseModel):
     institution: Optional[str] = Field(None, description="The name of the educational institution")
     degree: Optional[str] = Field(None, description="The degree or qualification earned")
@@ -39,6 +49,7 @@ class Education(BaseModel):
             return []
         return v
 
+# Pydantic model for extracting experience
 class Experience(BaseModel):
     company: Optional[str] = Field(None, description="The name of the company or organization")
     location: Optional[str] = Field(None, description="The location of the company or organization")
@@ -56,7 +67,7 @@ class Experience(BaseModel):
         elif not isinstance(v, list):
             return []
         return v
-
+# Main Pydantic class ensapsulating education and epxerience classes with other information
 class Candidate(BaseModel):
     name: Optional[str] = Field(None, description="The full name of the candidate")
     email: Optional[EmailStr] = Field(None, description="The email of the candidate")
@@ -81,65 +92,70 @@ class Candidate(BaseModel):
                 values[key] = None
         return values
 
+# Class for analyzing the CV contents
 class CvAnalyzer:
-    def __init__(self, file_path):
+    def __init__(self, file_path, llm_option, embedding_option):
+        self.file_path = file_path
+        self.llm_option = llm_option
+        self.embedding_option = embedding_option
+        self.device = "cpu"
+        self._resume_content = None  
         self._configure_settings()
-        self.query_engine = self._create_query_engine(file_path)
-        self.embedding_model = Settings.embed_model
-        self.llm = Settings.llm 
-        openai.api_key = os.getenv("OPENAI_API_KEY")
 
     def extract_candidate_data(self) -> Candidate:
         """
         Extracts candidate data from the resume.
-
-        Returns:
-            Candidate: The extracted candidate data.
         """
-        # Output Schema
+        print(f"Extracting CV data. LLM: {self.llm_option}")
         output_schema = Candidate.model_json_schema()
+        parser = LlamaParse(
+            result_type="markdown",
+            parsing_instructions="Extract each section separately based on the document structure.",
+            auto_mode=True,
+            api_key=os.getenv("LLAMA_API_KEY"),
+            verbose=True
+        )
+        file_extractor = {".pdf": parser}
 
-        # Prompt
+        # Load resume
+        documents = SimpleDirectoryReader(
+            input_files=[self.file_path], file_extractor=file_extractor
+        ).load_data()
+
+        # Store the pre-extracted content
+        self._resume_content = "\n".join([doc.text for doc in documents])
         prompt = f"""
-                You are expert in analyzing resumes. Use the following JSON schema describing the information I need to extract from the resume.  
-                Please extract name, email, age, skills, education, and experience from the CV in the format defined in the following JSON schema:
-                ```json
-                {output_schema}
-                ```json
-                Strictly follow this schema to extract the information. Under no circumstances, change the key names of this schema.
-                The information against the required fields may not be explicitly mentioned and may be sparsely located. Extract the information by carefully analyzing the resume. 
-                Provide the result in a structured JSON format. Please remove any ```json ``` characters from the output. Do not make up any information. If the information for a field is not available, simply output 'n/a'.
-                """
+            You are an expert in analyzing resumes. Use the following JSON schema to extract relevant information:
+            ```json
+            {output_schema}
+            ```json
+            Extract the information from the following document and provide a structured JSON response strictly adhering to the schema above. 
+            Please remove any ```json ``` characters from the output. Do not make up any information. If a field cannot be extracted, mark it as `n/a`.
+            Document:
+            ----------------
+            {self._resume_content}
+            ----------------
+            """
         try:
-            response = self.query_engine.query(prompt)
+            response = self.llm.complete(prompt)
+            if not response or not response.text:
+                raise ValueError("Failed to get a response from LLM.")
 
-            if not response or not response.response:
-                raise ValueError("Query engine returned an empty response.")
-
-            # Validate JSON response against the Candidate model
-            return Candidate.model_validate_json(response.response)
+            parsed_data = json.loads(response.text)
+            return Candidate.model_validate(parsed_data)
         except Exception as e:
-            print(f"Error parsing response: {str(e)}")  # Log the error for debugging
+            print(f"Error parsing response: {str(e)}")
             raise ValueError("Failed to extract insights. Please ensure the resume and query engine are properly configured.")
 
-    def _get_embedding(self, texts: list[str], model) -> np.ndarray:
-        """
-        Compute embeddings for a list of texts using OpenAI.
-
-        Parameters:
-        - texts (list of str): The texts to compute embeddings for.
-        - model (str): The model to use for embeddings. Defaults to "text-embedding-ada-002".
-
-        Returns:
-        - np.ndarray: A NumPy array containing embedding vectors for all provided texts.
-        """
+    # Function for computing embeddings based on the selected embedding model. These could be CV embeddings, skill embeddings, or job embeddings
+    def _get_embedding(self, texts: List[str], model: str) -> torch.Tensor:
         from openai import OpenAI
-
-        client = OpenAI(api_key = openai.api_key)
+        client = OpenAI(api_key=openai.api_key)
         response = client.embeddings.create(input=texts, model=model)
-        embeddings = [item.embedding for item in response.data]
-        return np.array(embeddings)
+        embeddings = [torch.tensor(item.embedding) for item in response.data]
+        return torch.stack(embeddings)
 
+    #Compute skill scores based on their semantic similarity (Cosine similarity) with the CV contents
     def compute_skill_scores(self, skills: list[str]) -> dict:
         """
         Compute semantic weightage scores for each skill based on the resume content
@@ -168,17 +184,18 @@ class CvAnalyzer:
             raw_scores[skill] = similarity
         return raw_scores
 
+    # Extract all the contents from a CV
     def _extract_resume_content(self) -> str:
         """
-        Extracts and returns the full text of the resume from the query engine.
-
-        Returns:
-        - str: The full text of the resume.
+        Extracts and returns the full text of the resume.
         """
-        documents = self.query_engine.retrieve("Extract full resume content")
-        return " ".join([doc.text for doc in documents])
+        if self._resume_content:
+            return self._resume_content  # Use the pre-stored content
+        else:
+            raise ValueError("Resume content not available. Ensure `extract_candidate_data` is called first.")
 
-    def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:
+    #Function to compute the Cosine similarity of skills with the CV contents
+    def _cosine_similarity(self, vec1: torch.Tensor, vec2: torch.Tensor) -> float:
         """
         Compute cosine similarity between two vectors.
 
@@ -189,56 +206,27 @@ class CvAnalyzer:
         Returns:
         - float: Cosine similarity score.
         """
-        return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+        vec1, vec2 = vec1.to(self.device), vec2.to(self.device)
+        return (torch.dot(vec1, vec2) / (torch.norm(vec1) * torch.norm(vec2))).item()
 
-    def _create_query_engine(self, file_path: str):
-        """
-        Creates a query engine from a file path.
-
-        Args:
-            file_path (str): The path to the file.
-
-        Returns:
-            The created query engine.
-        """
-
-        parsing_instructions = "This document is a resume. Extract each section separately. The sections may include personal and contact information, education, skills, experience, publications, etc. "
-        # Parser
-        parser = LlamaParse(
-            #result_type="text",  
-            result_type = "markdown",
-            parsing_instructions = parsing_instructions,
-            auto_mode=True,
-            auto_mode_trigger_on_image_in_page=True,
-            auto_mode_trigger_on_table_in_page=True,
-            api_key=LLAMA_CLOUD_API_KEY,
-            verbose=True,
-        )
-        file_extractor = {".pdf": parser}
-
-        # Reader
-        documents = SimpleDirectoryReader(
-            input_files=[file_path], file_extractor=file_extractor
-        ).load_data()
-
-        #print(documents)
-        
-        # Vector index
-        index = VectorStoreIndex.from_documents(documents)
-        # Query Engine
-        return index.as_query_engine()
-
+    # Function to configure model settings
     def _configure_settings(self):
         """
-        Set the LLM and the embedding model
+        Configure the LLM and embedding model based on user selections.
         """
-        llm = OpenAI(model="gpt-4o", temperature = 0.0)
-        embed_model = OpenAIEmbedding(model="text-embedding-3-large")
-        # Global Settings
+        # Configure the LLM
+        llm = OpenAI(model=self.llm_option, temperature=0.0)
+        
+        # Configure the embedding model
+        embed_model = OpenAIEmbedding(model=self.embedding_option)
+
+        # Set the models in Settings
         Settings.embed_model = embed_model
-        Settings.llm = llm 
-
-
+        Settings.llm = llm
+        self.llm = llm
+        self.embedding_model = embed_model
+    
+    #Function to create an existing job vector dataset or create a new job vector dataset
     def create_or_load_job_index(self, json_file: str, index_folder: str = "job_index_storage"):
         """
         Create or load a vector database for jobs using LlamaIndex.
@@ -250,29 +238,26 @@ class CvAnalyzer:
         Returns:
         - VectorStoreIndex: The job vector index.
         """
-        if os.path.exists(index_folder):
+        if not os.path.exists(index_folder):
+            print(f"Creating new job vector index with {self.embedding_model.model_name} model...")
+            with open(json_file, "r") as f:
+                job_data = json.load(f)
+            # Convert job descriptions to Document objects by serializing all fields dynamically
+            documents = []
+            for job in job_data["jobs"]:
+                job_text = "\n".join([f"{key.capitalize()}: {value}" for key, value in job.items()])
+                documents.append(Document(text=job_text))
+            # Create the vector index directly from documents
+            index = VectorStoreIndex.from_documents(documents, embed_model=self.embedding_model)
+            # Save index to disk
+            index.storage_context.persist(persist_dir=index_folder)
+            return index
+        else:
             print(f"Loading existing job index from {index_folder}...")
             storage_context = StorageContext.from_defaults(persist_dir=index_folder)
             return load_index_from_storage(storage_context)
 
-        print("Creating new job vector index...")
-        with open(json_file, "r") as f:
-            job_data = json.load(f)
-
-        # Convert job descriptions to Document objects by serializing all fields dynamically
-        documents = []
-        for job in job_data["jobs"]:
-            job_text = "\n".join([f"{key.capitalize()}: {value}" for key, value in job.items()])
-            documents.append(Document(text=job_text))
-
-        # Create the vector index directly from documents
-        index = VectorStoreIndex.from_documents(documents, embed_model=self.embedding_model)
-
-        # Save index to disk
-        index.storage_context.persist(persist_dir=index_folder)
-
-        return index
-
+    #Function to query job dataset to fetch the top k matching jobs according to the given education, skills, and experience. 
     def query_jobs(self, education, skills, experience, index, top_k=3):
         """
         Query the vector database for jobs matching the resume.
@@ -287,17 +272,12 @@ class CvAnalyzer:
         Returns:
         - List of job matches.
         """
+        print(f"Fetching job suggestions.(LLM: {self.llm.model}, embed_model: {self.embedding_option})")
         query = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}"
-        
-        # Configure the retriever with the desired number of top results
+        # Use retriever with appropriate model
         retriever = index.as_retriever(similarity_top_k=top_k)
-        
-        # Retrieve the top matching jobs
         matches = retriever.retrieve(query)
-
         return matches
- 
+
 if __name__ == "__main__":
     pass
-
-

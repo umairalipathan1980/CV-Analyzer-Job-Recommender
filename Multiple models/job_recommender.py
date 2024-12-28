@@ -1,230 +1,329 @@
+from llama_index.core import (
+    Settings,
+    VectorStoreIndex,
+    SimpleDirectoryReader,
+)
+
 import torch
 from transformers import AutoTokenizer, AutoModel
-from llama_index.core import Settings, VectorStoreIndex 
+from llama_index.core import Settings, VectorStoreIndex  
 from llama_index.llms.ollama import Ollama
-from typing import Union
-import streamlit as st
-import tempfile
-import random
+from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+import shutil
+from llama_parse import LlamaParse
+from llama_index.core.node_parser import SentenceSplitter
 import os
-from CV_analyzer import CvAnalyzer
-from llama_index.core.query_engine import CustomQueryEngine
-from llama_index.core.retrievers import BaseRetriever
+from typing import List, Optional
+from typing import List, Optional
+from pydantic import BaseModel, EmailStr, Field, root_validator, field_validator
+from dotenv import load_dotenv
+load_dotenv()
+from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
-from llama_index.core.prompts import PromptTemplate
-from pydantic import BaseModel, Field, ConfigDict
+import openai
+import numpy as np
+import json
+from llama_index.core import SimpleDirectoryReader, VectorStoreIndex, Settings, Document, StorageContext, load_index_from_storage
+from llama_index.core.node_parser import MarkdownElementNodeParser
+from sklearn.feature_extraction.text import TfidfVectorizer
+import streamlit as st
+from transformers import AutoTokenizer, AutoModel
+import torch
 
-class RAGStringQueryEngine(BaseModel):
-    """
-    Custom Query Engine for Retrieval-Augmented Generation (fetching matching job recommendations).
-    """
-    retriever: BaseRetriever
-    llm: Union[OpenAI, Ollama]
-    qa_prompt: PromptTemplate
+#Set your API keys in a secret.toml file
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+LLAMA_CLOUD_API_KEY = st.secrets["LLAMA_CLOUD_API_KEY"]
 
-    # Allow arbitrary types
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    def custom_query(self, candidate_details: str, retrieved_jobs: str):
-        query_str = self.qa_prompt.format(
-            query_str=candidate_details, context_str=retrieved_jobs
-        )
-
-        if isinstance(self.llm, OpenAI):
-            # OpenAI-specific query handling
-            response = self.llm.complete(query_str)
-        elif isinstance(self.llm, Ollama):
-            # Ollama-specific query handling
-            response = self.llm.complete(query_str)
-        else:
-            raise ValueError("Unsupported LLM type. Please use OpenAI or Ollama.")
-        
-        return str(response)
-
-def main():
-    st.set_page_config(page_title="CV Analyzer & Job Recommender", page_icon="🔍")
-    st.title("CV Analyzer & Job Recommender")
-    # Sidebar for model selection
-    with st.sidebar:
-        st.header("Model Selection")
-        llm_option = st.selectbox(
-            "Select an LLM:",
-            options=["gpt-4o", "gpt-4o-mini", "llama3:70b-instruct-q4_0","mistral:latest", "llama3.3:latest"],
-        )
-        embedding_option = st.selectbox(
-            "Select an embedding model:",
-            options=["text-embedding-3-large", "text-embedding-3-small", "BAAI/bge-small-en-v1.5"],
-        )
-        recreate_index = st.checkbox("Create new job embeddings")
-
-    st.write("Upload a CV to extract key information.")
-    uploaded_file = st.file_uploader("Select Your CV (PDF)", type="pdf", help="Choose a PDF file up to 5MB")
-
-    if uploaded_file is not None:
-        if st.button("Analyze"):
-            with st.spinner("Parsing CV... This may take a moment."):
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                        temp_file.write(uploaded_file.getvalue())
-                        temp_file_path = temp_file.name
-                    # Initialize CvAnalyzer with selected models
-                    analyzer = CvAnalyzer(temp_file_path, llm_option, embedding_option)
-                    print("Resume extractor initialized.")
-                    # Extract insights from the resume
-                    insights = analyzer.extract_candidate_data()
-                    print("Candidate data extracted.")
-                    # Load or create job vector index
-                    job_index = analyzer.create_or_load_job_index(json_file="sample_jobs.json", index_folder="job_index_storage", recreate=recreate_index)
-                    # Query jobs based on resume data
-                    education = [edu.degree for edu in insights.education] if insights.education else []
-                    skills = insights.skills or []
-                    experience = [exp.role for exp in insights.experience] if insights.experience else []
-                    matching_jobs = analyzer.query_jobs(education, skills, experience, job_index)
-                    # Send retrieved nodes to LLM for final output
-                    retrieved_context = "\n\n".join([match.node.get_content() for match in matching_jobs])
-                    candidate_details = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}"
-                    # Check for selected LLM and use the appropriate class
-                    if llm_option == "llama3:70b-instruct-q4_0":
-                        llm = Ollama(model="llama3:70b-instruct-q4_0", temperature=0.0)
-                    else:
-                        llm = OpenAI(model=llm_option, temperature=0.0)
-                    rag_engine = RAGStringQueryEngine(
-                        retriever=job_index.as_retriever(),
-                        llm=analyzer.llm,  # This can be OpenAI or Ollama
-                        qa_prompt=PromptTemplate(template="""\
-                            You are expert in analyzing resumes, based on the following candidate details and job descriptions:
-                            Candidate Details:
-                            ---------------------
-                            {query_str}
-                            ---------------------
-                            Job Descriptions:
-                            ---------------------
-                            {context_str}
-                            ---------------------
-                            Provide a concise list of the matching jobs. For each matching job, mention job-related details such as 
-                            company, brief job description, location, employment type, salary range, URL for each suggestion, and a brief explanation of why the job matches the candidate's profile.
-                            Be critical in matching profile with the jobs. Thoroughly analyze education, skills, and experience to match jobs.  
-                            Do not explain why the candidate's profile does not match with the other jobs. Do not include any summary. Order the jobs based on their relevance. 
-                            Answer: 
-                            """
-                        ),
-                    )
-
-                    llm_response = rag_engine.custom_query(
-                        candidate_details=candidate_details,
-                        retrieved_jobs=retrieved_context
-                    )
-                    # Display extracted information
-                    st.subheader("Extracted Information")
-                    st.write(f"**Name:** {insights.name}")
-                    st.write(f"**Email:** {insights.email}")
-                    st.write(f"**Age:** {insights.age}")
-                    display_education(insights.education or [])
-                    with st.spinner("Extracting skills..."):
-                        display_skills(insights.skills or [], analyzer)
-                    display_experience(insights.experience or [])
-                    st.subheader("Top Matching Jobs with Explanation")
-                    st.markdown(llm_response)
-                    print("Done.")
-                except Exception as e:
-                    st.error(f"Failed to analyze the resume: {str(e)}")
-
-def display_skills(skills: list[str], analyzer):
-    """
-    Display skills with their computed scores as large golden stars with partial coverage.
-    """
-    if not skills:
-        st.warning("No skills found to display.")
-        return
-    st.subheader("Skills")
-    # Custom CSS for large golden stars
-    st.markdown(
-        """
-        <style>
-        .star-container {
-            display: inline-block;
-            position: relative;
-            font-size: 1.5rem;
-            color: lightgray;
-        }
-        .star-container .filled {
-            position: absolute;
-            top: 0;
-            left: 0;
-            color: gold;
-            overflow: hidden;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+# Pydantic model for extracting education
+class Education(BaseModel):
+    institution: Optional[str] = Field(None, description="The name of the educational institution")
+    degree: Optional[str] = Field(None, description="The degree or qualification earned")
+    graduation_date: Optional[str] = Field(None, description="The graduation date (e.g., 'YYYY-MM')")
+    details: Optional[List[str]] = Field(
+        None, description="Additional details about the education (e.g., coursework, achievements)"
     )
 
-    # Compute scores for all skills
-    skill_scores = analyzer.compute_skill_scores(skills)
-    # Display each skill with a star rating
-    for skill in skills:
-        score = skill_scores.get(skill, 0)  # Get the raw score
-        max_score = max(skill_scores.values()) if skill_scores else 1  # Avoid division by zero
-        # Normalize the score to a 5-star scale
-        normalized_score = (score / max_score) * 5 if max_score > 0 else 0
-        # Split into full stars and partial star percentage
-        full_stars = int(normalized_score)
-        if (normalized_score - full_stars) >= 0.40:
-            partial_star_percentage = 50
+    @field_validator('details', mode='before')
+    def validate_details(cls, v):
+        if isinstance(v, str) and v.lower() == 'n/a':
+            return []
+        elif not isinstance(v, list):
+            return []
+        return v
+
+# Pydantic model for extracting experience
+class Experience(BaseModel):
+    company: Optional[str] = Field(None, description="The name of the company or organization")
+    location: Optional[str] = Field(None, description="The location of the company or organization")
+    role: Optional[str] = Field(None, description="The role or job title held by the candidate")
+    start_date: Optional[str] = Field(None, description="The start date of the job (e.g., 'YYYY-MM')")
+    end_date: Optional[str] = Field(None, description="The end date of the job or 'Present' if ongoing (e.g., 'MM-YYYY')")
+    responsibilities: Optional[List[str]] = Field(
+        None, description="A list of responsibilities and tasks handled during the job"
+    )
+
+    @field_validator('responsibilities', mode='before')
+    def validate_responsibilities(cls, v):
+        if isinstance(v, str) and v.lower() == 'n/a':
+            return []
+        elif not isinstance(v, list):
+            return []
+        return v
+# Main Pydantic class ensapsulating education and epxerience classes with other information
+class Candidate(BaseModel):
+    name: Optional[str] = Field(None, description="The full name of the candidate")
+    email: Optional[EmailStr] = Field(None, description="The email of the candidate")
+    age: Optional[int] = Field(
+        None,
+        description="The age of the candidate."
+    )
+    skills: Optional[List[str]] = Field(
+        None, description="A list of high-level skills possessed by the candidate."
+    )
+    experience: Optional[List[Experience]] = Field(
+        None, description="A list of experiences detailing previous jobs, roles, and responsibilities"
+    )
+    education: Optional[List[Education]] = Field(
+        None, description="A list of educational qualifications of the candidate including degrees, institutions studied in, and dates of start and end."
+    )
+
+    @root_validator(pre=True)
+    def handle_invalid_values(cls, values):
+        for key, value in values.items():
+            if isinstance(value, str) and value.lower() in {'n/a', 'none', ''}:
+                values[key] = None
+        return values
+
+# Class for analyzing the CV contents
+class CvAnalyzer:
+    def __init__(self, file_path, llm_option, embedding_option):
+        self.file_path = file_path
+        self.llm_option = llm_option
+        self.embedding_option = embedding_option
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self._resume_content = None  
+        self._configure_settings()
+
+    def extract_candidate_data(self) -> Candidate:
+        """
+        Extracts candidate data from the resume.
+        """
+        print(f"Extracting CV data. LLM: {self.llm_option}")
+        output_schema = Candidate.model_json_schema()
+        parser = LlamaParse(
+            result_type="markdown",
+            parsing_instructions="Extract each section separately based on the document structure.",
+            auto_mode=True,
+            api_key=os.getenv("LLAMA_API_KEY"),
+            verbose=True
+        )
+        file_extractor = {".pdf": parser}
+
+        # Load resume
+        documents = SimpleDirectoryReader(
+            input_files=[self.file_path], file_extractor=file_extractor
+        ).load_data()
+
+        # Store the pre-extracted content
+        self._resume_content = "\n".join([doc.text for doc in documents])
+        prompt = f"""
+            You are an expert in analyzing resumes. Use the following JSON schema to extract relevant information:
+            ```json
+            {output_schema}
+            ```json
+            Extract the information from the following document and provide a structured JSON response strictly adhering to the schema above. 
+            Please remove any ```json ``` characters from the output. Do not make up any information. If a field cannot be extracted, mark it as `n/a`.
+            Document:
+            ----------------
+            {self._resume_content}
+            ----------------
+            """
+        try:
+            response = self.llm.complete(prompt)
+            if not response or not response.text:
+                raise ValueError("Failed to get a response from LLM.")
+
+            parsed_data = json.loads(response.text)
+            return Candidate.model_validate(parsed_data)
+        except Exception as e:
+            print(f"Error parsing response: {str(e)}")
+            raise ValueError("Failed to extract insights. Please ensure the resume and query engine are properly configured.")
+
+    # Function for computing embeddings based on the selected embedding model. These could be CV embeddings, skill embeddings, or job embeddings
+    def _get_embedding(self, texts: List[str], model: str) -> torch.Tensor:
+        if model.startswith("text-embedding-"):
+            from openai import OpenAI
+            client = OpenAI(api_key=openai.api_key)
+            response = client.embeddings.create(input=texts, model=model)
+            embeddings = [torch.tensor(item.embedding) for item in response.data]
+        elif model == "BAAI/bge-small-en-v1.5":
+            tokenizer = AutoTokenizer.from_pretrained(model)
+            hf_model = AutoModel.from_pretrained(model).to(self.device)
+
+            embeddings = []
+            for text in texts:
+                inputs = tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512).to(self.device)
+                with torch.no_grad():
+                    outputs = hf_model(**inputs)
+                embeddings.append(outputs.last_hidden_state.mean(dim=1).squeeze())
         else:
-            partial_star_percentage = 0
+            raise ValueError(f"Unsupported embedding model: {model}")
 
-        # Generate the star display
-        stars_html = ""
-        for i in range(5):
-            if i < full_stars:
-                # Fully filled star
-                stars_html += '<span class="star-container"><span class="filled">★</span>★</span>'
-            elif i == full_stars:
-                # Partially filled star
-                stars_html += f'<span class="star-container"><span class="filled" style="width: {partial_star_percentage}%">★</span>★</span>'
-            else:
-                # Empty star
-                stars_html += '<span class="star-container">★</span>'
+        return torch.stack(embeddings)
 
-        # Display skill name and star rating
-        st.markdown(f"**{skill}**: {stars_html}", unsafe_allow_html=True)
+    #Compute skill scores based on their semantic similarity (Cosine similarity) with the CV contents
+    def compute_skill_scores(self, skills: list[str]) -> dict:
+        """
+        Compute semantic weightage scores for each skill based on the resume content
 
-def display_education(education_list):
-    """
-    Display a list of educational qualifications.
-    """
-    if education_list:
-        st.subheader("Education")
-        for education in education_list:
-            institution = education.institution if education.institution else "Not found"
-            degree = education.degree if education.degree else "Not found"
-            year = education.graduation_date if education.graduation_date else "Not found"
-            details = education.details if education.details else []
-            formatted_details = ". ".join(details) if details else "No additional details provided."
-            st.markdown(f"**{degree}**, {institution} ({year})")
-            st.markdown(f"_Details_: {formatted_details}")
+        Parameters:
+        - skills (list of str): A list of skills to evaluate.
 
-def display_experience(experience_list):
-    """
-    Display a single-level bulleted list of experiences.
-    """
-    if experience_list:
-        st.subheader("Experience")
-        for experience in experience_list:
-            job_title = experience.role if experience.role else "Not found"
-            company_name = experience.company if experience.company else "Not found"
-            location = experience.location if experience.location else "Not found"
-            start_date = experience.start_date if experience.start_date else "Not found"
-            end_date = experience.end_date if experience.end_date else "Not found"
-            responsibilities = experience.responsibilities if experience.responsibilities else ["Not found"]
-            brief_responsibilities = ", ".join(responsibilities)
-            st.markdown(
-                f"- Worked as **{job_title}** from {start_date} to {end_date} in *{company_name}*, {location}, "
-                f"where responsibilities include {brief_responsibilities}."
+        Returns:
+        - dict: A dictionary mapping each skill to a score 
+        """
+        # Extract resume content and compute its embedding
+        resume_content = self._extract_resume_content()
+
+        # Compute embeddings for all skills at once
+        skill_embeddings = self._get_embedding(skills, model=self.embedding_model.model_name)
+
+        # Compute raw similarity scores and semantic frequency for each skill
+        raw_scores = {}
+        # frequency_scores = {}
+        for skill, skill_embedding in zip(skills, skill_embeddings):
+            # Compute semantic similarity with the entire resume
+            similarity = self._cosine_similarity(
+                self._get_embedding([resume_content], model=self.embedding_model.model_name)[0],
+                skill_embedding
             )
+            raw_scores[skill] = similarity
+        return raw_scores
+
+    # Extract all the contents from a CV
+    def _extract_resume_content(self) -> str:
+        """
+        Extracts and returns the full text of the resume.
+        """
+        if self._resume_content:
+            return self._resume_content  # Use the pre-stored content
+        else:
+            raise ValueError("Resume content not available. Ensure `extract_candidate_data` is called first.")
+
+    #Function to compute the Cosine similarity of skills with the CV contents
+    def _cosine_similarity(self, vec1: torch.Tensor, vec2: torch.Tensor) -> float:
+        """
+        Compute cosine similarity between two vectors.
+
+        Parameters:
+        - vec1 (np.ndarray): First vector.
+        - vec2 (np.ndarray): Second vector.
+
+        Returns:
+        - float: Cosine similarity score.
+        """
+        vec1, vec2 = vec1.to(self.device), vec2.to(self.device)
+        return (torch.dot(vec1, vec2) / (torch.norm(vec1) * torch.norm(vec2))).item()
+
+    # Function to configure model settings
+    def _configure_settings(self):
+        """
+        Configure the LLM and embedding model based on user selections.
+        """
+        # Determine the device based on CUDA availability
+        if torch.cuda.is_available():
+            device = "cuda"
+            print("CUDA is available. Using GPU.")
+        else:
+            device = "cpu"
+            print("CUDA is not available. Using CPU.")
+
+        # Configure the LLM
+        if self.llm_option == "gpt-4o":
+            llm = OpenAI(model="gpt-4o", temperature=0.0)
+        elif self.llm_option == "gpt-4o-mini":
+            llm = Ollama(model="gpt-4o-mini", temperature = 0)
+        elif self.llm_option == "llama3:70b-instruct-q4_0":
+            llm = Ollama(model="llama3:70b-instruct-q4_0", temperature = 0, request_timeout=180.0, device=device)
+        elif self.llm_option == "mistral:latest":
+            llm = Ollama(model="mistral:latest", temperature = 0, request_timeout=180.0, device=device)
+        elif self.llm_option == "llama3.3:latest":
+            llm = Ollama(model="llama3.3:latest", temperature = 0, request_timeout=180.0, device=device)
+        else:
+            raise ValueError(f"Unsupported LLM option: {self.llm_option}")
+
+        # Configure the embedding model
+        if self.embedding_option.startswith("text-embedding-"):
+            embed_model = OpenAIEmbedding(model=self.embedding_option)
+        elif self.embedding_option == "BAAI/bge-small-en-v1.5":
+            embed_model = HuggingFaceEmbedding(model_name="BAAI/bge-small-en-v1.5")
+        else:
+            raise ValueError(f"Unsupported embedding model: {self.embedding_option}")
+
+        # Set the models in Settings
+        Settings.embed_model = embed_model
+        Settings.llm = llm
+        self.llm = llm
+        self.embedding_model = embed_model
+    
+    #Function to create an existing job vector dataset or create a new job vector dataset
+    def create_or_load_job_index(self, json_file: str, index_folder: str = "job_index_storage", recreate: bool = False):
+        """
+        Create or load a vector database for jobs using LlamaIndex.
+
+        Args:
+        - json_file: Path to job dataset JSON file.
+        - index_folder: Folder to save/load the vector index.
+        - recreate: Boolean flag indicating whether to recreate the index.
+
+        Returns:
+        - VectorStoreIndex: The job vector index.
+        """
+        if recreate and os.path.exists(index_folder):
+            # Delete the existing job index storage
+            print(f"Deleting the existing job dataset: {index_folder}...")
+            shutil.rmtree(index_folder)
+        if not os.path.exists(index_folder):
+            print(f"Creating new job vector index with {self.embedding_model.model_name} model...")
+            with open(json_file, "r") as f:
+                job_data = json.load(f)
+            # Convert job descriptions to Document objects by serializing all fields dynamically
+            documents = []
+            for job in job_data["jobs"]:
+                job_text = "\n".join([f"{key.capitalize()}: {value}" for key, value in job.items()])
+                documents.append(Document(text=job_text))
+            # Create the vector index directly from documents
+            index = VectorStoreIndex.from_documents(documents, embed_model=self.embedding_model)
+            # Save index to disk
+            index.storage_context.persist(persist_dir=index_folder)
+            return index
+        else:
+            print(f"Loading existing job index from {index_folder}...")
+            storage_context = StorageContext.from_defaults(persist_dir=index_folder)
+            return load_index_from_storage(storage_context)
+
+    #Function to query job dataset to fetch the top k matching jobs according to the given education, skills, and experience. 
+    def query_jobs(self, education, skills, experience, index, top_k=3):
+        """
+        Query the vector database for jobs matching the resume.
+
+        Args:
+        - education: List of educational qualifications.
+        - skills: List of skills.
+        - experience: List of experiences.
+        - index: Job vector database index.
+        - top_k: Number of top results to return.
+
+        Returns:
+        - List of job matches.
+        """
+        print(f"Fetching job suggestions.(LLM: {self.llm.model}, embed_model: {self.embedding_option})")
+        query = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}"
+        # Use retriever with appropriate model
+        retriever = index.as_retriever(similarity_top_k=top_k)
+        matches = retriever.retrieve(query)
+        return matches
 
 if __name__ == "__main__":
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    main()
+    pass
 

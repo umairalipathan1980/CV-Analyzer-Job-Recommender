@@ -10,12 +10,10 @@ If you have a powerful computing machine with a GPU, you can try the code in **M
 
 The instructions to use the codes in both the folders are present in their respective folders. 
 
-## Features
-- Option to select open-source or OpenAI's large language models and embedding models (the folder Multiple models) 
-- **CV Parsing**: Parsing CV using LlamaParse. 
-- **Information Extraction**: Extracting information from CV using Pydantic models and gpt-4o
-- **Skills scoring**: Assigning scores to skills and displaying in a UI
-- **Job Recommendations**: Recommding jobs based on the profile from a job dataset
+## Tool Features
+The tool is flexible to choose between open-source large language models or OpenAI's advanced models, organized within the "Multiple models" folder. CV parsing is handled using LlamaParse, enabling structured extraction of data from resumes.  
+
+The tool utilizes Pydantic models with a large language model for information extraction (personal, skills, experience, education) from CVs. A scoring mechanism assesses skills and the results are displayed in a user interface.  The tool provides job recommendations by matching the extracted information from a resume with relevant job ads in a curated job dataset. 
 
 ## Overall Process
 The following figure shows the overall process.  

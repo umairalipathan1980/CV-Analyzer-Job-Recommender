@@ -169,10 +169,12 @@ def display_skills(skills: list[str], analyzer):
         normalized_score = (score / max_score) * 5 if max_score > 0 else 0
         # Split into full stars and partial star percentage
         full_stars = int(normalized_score)
-        if (normalized_score - full_stars) >= 0.40:
+        if (normalized_score - full_stars) <= 0.40:
+            partial_star_percentage = 0
+        elif (normalized_score - full_stars) > 0.40 and (normalized_score - full_stars)<=70:
             partial_star_percentage = 50
         else:
-            partial_star_percentage = 0
+            partial_star_percentage = 100
 
         # Generate the star display
         stars_html = ""

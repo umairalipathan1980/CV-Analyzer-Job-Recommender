@@ -68,7 +68,7 @@ class Experience(BaseModel):
             return []
         return v
 # Main Pydantic class ensapsulating education and epxerience classes with other information
-class Candidate(BaseModel):
+class ApplicantProfile(BaseModel):
     name: Optional[str] = Field(None, description="The full name of the candidate")
     email: Optional[EmailStr] = Field(None, description="The email of the candidate")
     age: Optional[int] = Field(
@@ -95,19 +95,19 @@ class Candidate(BaseModel):
 # Class for analyzing the CV contents
 class CvAnalyzer:
     def __init__(self, file_path, llm_option, embedding_option):
-        self.file_path = file_path
-        self.llm_option = llm_option
-        self.embedding_option = embedding_option
-        self.device = "cpu"
+        self.file_path = file_path #CV file
+        self.llm_option = llm_option #LLM model name
+        self.embedding_option = embedding_option #embedding model name
+        self.device = "cpu" 
         self._resume_content = None  
-        self._configure_settings()
+        self._model_settings() #configure models
 
-    def extract_candidate_data(self) -> Candidate:
+    def extract_profile_info(self) -> ApplicantProfile:
         """
         Extracts candidate data from the resume.
         """
         print(f"Extracting CV data. LLM: {self.llm_option}")
-        output_schema = Candidate.model_json_schema()
+        output_schema = ApplicantProfile.model_json_schema()
         parser = LlamaParse(
             result_type="markdown",
             parsing_instructions="Extract each section separately based on the document structure.",
@@ -142,7 +142,7 @@ class CvAnalyzer:
                 raise ValueError("Failed to get a response from LLM.")
 
             parsed_data = json.loads(response.text)
-            return Candidate.model_validate(parsed_data)
+            return ApplicantProfile.model_validate(parsed_data)
         except Exception as e:
             print(f"Error parsing response: {str(e)}")
             raise ValueError("Failed to extract insights. Please ensure the resume and query engine are properly configured.")
@@ -192,7 +192,7 @@ class CvAnalyzer:
         if self._resume_content:
             return self._resume_content  # Use the pre-stored content
         else:
-            raise ValueError("Resume content not available. Ensure `extract_candidate_data` is called first.")
+            raise ValueError("Resume content not available. Ensure `extract_profile_info` is called first.")
 
     #Function to compute the Cosine similarity of skills with the CV contents
     def _cosine_similarity(self, vec1: torch.Tensor, vec2: torch.Tensor) -> float:
@@ -210,7 +210,7 @@ class CvAnalyzer:
         return (torch.dot(vec1, vec2) / (torch.norm(vec1) * torch.norm(vec2))).item()
 
     # Function to configure model settings
-    def _configure_settings(self):
+    def _model_settings(self):
         """
         Configure the LLM and embedding model based on user selections.
         """

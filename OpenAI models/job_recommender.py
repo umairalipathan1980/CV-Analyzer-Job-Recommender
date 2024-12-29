@@ -20,26 +20,17 @@ class RAGStringQueryEngine(BaseModel):
     Custom Query Engine for Retrieval-Augmented Generation (fetching matching job recommendations).
     """
     retriever: BaseRetriever
-    llm: Union[OpenAI, Ollama]
+    llm: OpenAI
     qa_prompt: PromptTemplate
 
     # Allow arbitrary types
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
     def custom_query(self, candidate_details: str, retrieved_jobs: str):
         query_str = self.qa_prompt.format(
             query_str=candidate_details, context_str=retrieved_jobs
         )
 
-        if isinstance(self.llm, OpenAI):
-            # OpenAI-specific query handling
-            response = self.llm.complete(query_str)
-        elif isinstance(self.llm, Ollama):
-            # Ollama-specific query handling
-            response = self.llm.complete(query_str)
-        else:
-            raise ValueError("Unsupported LLM type. Please use OpenAI or Ollama.")
-        
+        response = self.llm.complete(query_str)        
         return str(response)
 
 def main():
@@ -47,7 +38,6 @@ def main():
     st.title("CV Analyzer & Job Recommender")
     llm_option = "gpt-4o"
     embedding_option = "text-embedding-3-large"
-
     st.write("Upload a CV to extract key information.")
     uploaded_file = st.file_uploader("Select Your CV (PDF)", type="pdf", help="Choose a PDF file up to 5MB")
 
@@ -62,26 +52,25 @@ def main():
                     analyzer = CvAnalyzer(temp_file_path, llm_option, embedding_option)
                     print("Resume extractor initialized.")
                     # Extract insights from the resume
-                    insights = analyzer.extract_candidate_data()
+                    insights = analyzer.extract_profile_info()
                     print("Candidate data extracted.")
                     # Load or create job vector index
                     job_index = analyzer.create_or_load_job_index(json_file="sample_jobs.json", index_folder="job_index_storage")
-                    # Query jobs based on resume data
+                    # Extract education, skills, and experience fields from insights object
                     education = [edu.degree for edu in insights.education] if insights.education else []
                     skills = insights.skills or []
                     experience = [exp.role for exp in insights.experience] if insights.experience else []
+                    #Retrieve the top_k matching jobs
                     matching_jobs = analyzer.query_jobs(education, skills, experience, job_index)
-                    # Send retrieved nodes to LLM for final output
-                    retrieved_context = "\n\n".join([match.node.get_content() for match in matching_jobs])
-                    candidate_details = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}"
-                    # Check for selected LLM and use the appropriate class
-                    if llm_option == "llama3:70b-instruct-q4_0":
-                        llm = Ollama(model="llama3:70b-instruct-q4_0", temperature=0.0)
-                    else:
-                        llm = OpenAI(model=llm_option, temperature=0.0)
+                    #combine the retrieved matching jobs
+                    retrieved_context = "\n\n".join([match.node.get_content() for match in matching_jobs]) 
+                    #combine the profile information
+                    candidate_details = f"Education: {', '.join(education)}; Skills: {', '.join(skills)}; Experience: {', '.join(experience)}" 
+                    #Initialize LLM and the query engine
+                    llm = OpenAI(model=llm_option, temperature=0.0)
                     rag_engine = RAGStringQueryEngine(
                         retriever=job_index.as_retriever(),
-                        llm=analyzer.llm,  # This can be OpenAI or Ollama
+                        llm=analyzer.llm,  
                         qa_prompt=PromptTemplate(template="""\
                             You are expert in analyzing resumes, based on the following candidate details and job descriptions:
                             Candidate Details:
@@ -101,6 +90,7 @@ def main():
                         ),
                     )
 
+                    #send the profile details and the retrieved jobs to the LLM for final recommendation
                     llm_response = rag_engine.custom_query(
                         candidate_details=candidate_details,
                         retrieved_jobs=retrieved_context
@@ -110,17 +100,17 @@ def main():
                     st.write(f"**Name:** {insights.name}")
                     st.write(f"**Email:** {insights.email}")
                     st.write(f"**Age:** {insights.age}")
-                    display_education(insights.education or [])
+                    list_education(insights.education or [])
                     with st.spinner("Extracting skills..."):
-                        display_skills(insights.skills or [], analyzer)
-                    display_experience(insights.experience or [])
+                        list_skills(insights.skills or [], analyzer)
+                    list_experience(insights.experience or [])
                     st.subheader("Top Matching Jobs with Explanation")
                     st.markdown(llm_response)
                     print("Done.")
                 except Exception as e:
                     st.error(f"Failed to analyze the resume: {str(e)}")
 
-def display_skills(skills: list[str], analyzer):
+def list_skills(skills: list[str], analyzer):
     """
     Display skills with their computed scores as large golden stars with partial coverage.
     """
@@ -160,10 +150,12 @@ def display_skills(skills: list[str], analyzer):
         normalized_score = (score / max_score) * 5 if max_score > 0 else 0
         # Split into full stars and partial star percentage
         full_stars = int(normalized_score)
-        if (normalized_score - full_stars) >= 0.40:
+        if (normalized_score - full_stars) <= 0.40:
+            partial_star_percentage = 0
+        elif (normalized_score - full_stars) > 0.40 and (normalized_score - full_stars)<=70:
             partial_star_percentage = 50
         else:
-            partial_star_percentage = 0
+            partial_star_percentage = 100
 
         # Generate the star display
         stars_html = ""
@@ -181,7 +173,7 @@ def display_skills(skills: list[str], analyzer):
         # Display skill name and star rating
         st.markdown(f"**{skill}**: {stars_html}", unsafe_allow_html=True)
 
-def display_education(education_list):
+def list_education(education_list):
     """
     Display a list of educational qualifications.
     """
@@ -196,7 +188,7 @@ def display_education(education_list):
             st.markdown(f"**{degree}**, {institution} ({year})")
             st.markdown(f"_Details_: {formatted_details}")
 
-def display_experience(experience_list):
+def list_experience(experience_list):
     """
     Display a single-level bulleted list of experiences.
     """
@@ -216,5 +208,4 @@ def display_experience(experience_list):
             )
 
 if __name__ == "__main__":
-    device = "cpu" 
     main()

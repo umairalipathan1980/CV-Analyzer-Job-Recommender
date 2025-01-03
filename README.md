@@ -30,6 +30,13 @@ Following is the screenshot of the streamlit app:
   <img src="images/appScrshot.png" alt="My Figure" width="700">
   <br>
   <em>A snapshot of the streamlit application</em>
+</p>  
+
+Here is the application's workflow:
+<p align="center">
+  <img src="images/workflow.png" alt="My Figure" width="700">
+  <br>
+  <em>A snapshot of the streamlit application</em>
 </p>
 
 # How to Use the Code.

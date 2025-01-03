@@ -1,4 +1,4 @@
-# This application is based on [my article in Towards Data Science](https://towardsdatascience.com/ai-powered-information-extraction-and-matchmaking-0408c93ec1b9).
+**This application is based on [my article in Towards Data Science](https://towardsdatascience.com/ai-powered-information-extraction-and-matchmaking-0408c93ec1b9).**
 
 # CV Analyzer and Job Recommender
 

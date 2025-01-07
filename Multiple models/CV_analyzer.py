@@ -113,7 +113,7 @@ class CvAnalyzer:
         parser = LlamaParse(
             result_type="markdown",
             parsing_instructions="Extract each section separately based on the document structure.",
-            auto_mode=True,
+            premium_mode=True,
             api_key=os.getenv("LLAMA_API_KEY"),
             verbose=True
         )
